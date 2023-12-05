@@ -230,7 +230,7 @@ Partial Class sdgThemesSub
         Me.tbPanel.Name = "tbPanel"
         Me.tbPanel.Size = New System.Drawing.Size(519, 461)
         Me.tbPanel.TabIndex = 3
-        Me.tbPanel.Text = "Panel"
+        Me.tbPanel.Text = "Grid Lines"
         Me.tbPanel.UseVisualStyleBackColor = True
         '
         'ucrPanelGridMinor
@@ -265,7 +265,7 @@ Partial Class sdgThemesSub
         Me.tbBackground.Name = "tbBackground"
         Me.tbBackground.Size = New System.Drawing.Size(519, 461)
         Me.tbBackground.TabIndex = 4
-        Me.tbBackground.Text = "Background"
+        Me.tbBackground.Text = "Panel"
         Me.tbBackground.UseVisualStyleBackColor = True
         '
         'ucrPanelBackground
@@ -424,7 +424,7 @@ Partial Class sdgThemesSub
         'ucrBaseSubdialog
         '
         Me.ucrBaseSubdialog.AutoSize = True
-        Me.ucrBaseSubdialog.Location = New System.Drawing.Point(182, 494)
+        Me.ucrBaseSubdialog.Location = New System.Drawing.Point(160, 495)
         Me.ucrBaseSubdialog.Name = "ucrBaseSubdialog"
         Me.ucrBaseSubdialog.Size = New System.Drawing.Size(224, 30)
         Me.ucrBaseSubdialog.TabIndex = 2

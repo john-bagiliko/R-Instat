@@ -11,16 +11,24 @@
 ' MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ' GNU General Public License for more details.
 '
-' You should have received a copy of the GNU General Public License 
+' You should have received a copy of the GNU General Public License
 ' along with this program.  If not, see <http://www.gnu.org/licenses/>.
 Imports instat.Translations
 Public Class dlgThreeVariablePivotTable
     Private bFirstLoad As Boolean = True
     Private bRcodeSet As Boolean = False
     Private bReset As Boolean = True
-    Private clsRPivotTableFunction, clsSelectFunction, clsConcatenateFunction,
-        clsGetObjectFunction As New RFunction
-    Private clsPipeOperator As New ROperator
+    Private clsConcatenateFunction, clsFlattenFunction,
+         clsLevelsFunction, clsPasteFunction,
+        clsRelevelPasteFunction, clsRPivotTableFunction,
+        clsSelectFunction As New RFunction
+    Private clsPipeOperator, clsLevelsDollarOperator As New ROperator
+    Public enumPivotMode As PivotMode = PivotMode.Describe
+
+    Public Enum PivotMode
+        Describe
+        Climatic
+    End Enum
 
     Private Sub dlgThreeVariablePivotTable_Load(sender As Object, e As EventArgs) Handles MyBase.Load
         If bFirstLoad Then
@@ -35,11 +43,12 @@ Public Class dlgThreeVariablePivotTable
         bReset = False
         autoTranslate(Me)
         TestOkEnabled()
+        AutofillMode()
     End Sub
 
     Private Sub InitialiseDialog()
-        ucrBase.iHelpTopicID = 603
-        ucrBase.clsRsyntax.iCallType = 2
+        ucrBase.iHelpTopicID = 417
+        ucrBase.clsRsyntax.bExcludeAssignedFunctionOutput = False
 
         ucrSelectorPivot.SetParameter(New RParameter("data", iNewPosition:=0))
         ucrSelectorPivot.SetParameterIsrfunction()
@@ -62,6 +71,15 @@ Public Class dlgThreeVariablePivotTable
         ucrChkSelectedVariable.AddParameterIsRFunctionCondition(False, "data", True)
         ucrChkSelectedVariable.AddParameterIsRFunctionCondition(True, "data", False)
 
+
+        ucrReceiverFactorLevels.SetParameter(New RParameter("variable", iNewPosition:=1))
+        ucrReceiverFactorLevels.SetDataType("factor")
+        ucrReceiverFactorLevels.SetParameterIsString()
+        ucrReceiverFactorLevels.bWithQuotes = False
+        ucrReceiverFactorLevels.Selector = ucrSelectorPivot
+        ttFactorLevels.SetToolTip(ucrReceiverFactorLevels.txtReceiverSingle,
+                                  "Use when default (alphabetical) order of factor levels is inappropriate.")
+
         ucrChkSelectedVariable.SetText("Select Variable(s)")
         ucrChkSelectedVariable.AddToLinkedControls(ucrReceiverSelectedVariable, {True}, bNewLinkedHideIfParameterMissing:=True)
         ttSelectedVariable.SetToolTip(ucrChkSelectedVariable.chkCheck, "Include the dataframe if unchecked")
@@ -69,7 +87,6 @@ Public Class dlgThreeVariablePivotTable
         ucrChkIncludeSubTotals.SetText("Subtotals")
         ucrChkIncludeSubTotals.SetParameter(New RParameter("subtotals", iNewPosition:=3))
         ucrChkIncludeSubTotals.SetValuesCheckedAndUnchecked("TRUE", "FALSE")
-        ucrChkIncludeSubTotals.SetRDefault("FALSE")
 
         ucrChkNumericVariable.SetText("Numeric Variable (Optional):")
         ucrChkNumericVariable.AddParameterPresentCondition(True, "rendererName")
@@ -98,7 +115,7 @@ Public Class dlgThreeVariablePivotTable
         ucrInputSummary.SetLinkedDisplayControl(lblSummary)
 
         ucrSavePivot.SetPrefix("pivot_table")
-        ucrSavePivot.SetSaveTypeAsTable()
+        ucrSavePivot.SetSaveType(RObjectTypeLabel.Table, strRObjectFormat:=RObjectFormat.Html)
         ucrSavePivot.SetDataFrameSelector(ucrSelectorPivot.ucrAvailableDataFrames)
         ucrSavePivot.SetIsComboBox()
         ucrSavePivot.SetCheckBoxText("Save Table")
@@ -106,19 +123,52 @@ Public Class dlgThreeVariablePivotTable
     End Sub
 
     Private Sub SetDefaults()
+        clsConcatenateFunction = New RFunction
+        clsFlattenFunction = New RFunction
+        clsLevelsFunction = New RFunction
+        clsPasteFunction = New RFunction
+        clsRelevelPasteFunction = New RFunction
         clsRPivotTableFunction = New RFunction
         clsSelectFunction = New RFunction
-        clsConcatenateFunction = New RFunction
+
+        clsLevelsDollarOperator = New ROperator
         clsPipeOperator = New ROperator
-        clsGetObjectFunction = New RFunction
 
         ucrReceiverInitialRowFactors.SetMeAsReceiver()
         ucrSelectorPivot.Reset()
         ucrSavePivot.Reset()
-        ucrBase.clsRsyntax.ClearCodes()
 
-        clsGetObjectFunction.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$get_objects")
-        clsGetObjectFunction.AddParameter("data_name", Chr(34) & ucrSelectorPivot.ucrAvailableDataFrames.cboAvailableDataFrames.Text & Chr(34), iPosition:=0)
+
+        clsLevelsDollarOperator.SetOperation("$")
+
+        clsLevelsFunction.SetRCommand("levels")
+        clsLevelsFunction.AddParameter("x", clsROperatorParameter:=clsLevelsDollarOperator, iPosition:=0)
+
+        clsPasteFunction.SetRCommand("paste0")
+        clsPasteFunction.AddParameter("first_parameter", Chr(34) & "\" & Chr(34) & Chr(34),
+                                      iPosition:=0, bIncludeArgumentName:=False)
+        clsPasteFunction.AddParameter("second_parameter", clsRFunctionParameter:=clsLevelsFunction,
+                                      iPosition:=1, bIncludeArgumentName:=False)
+        clsPasteFunction.AddParameter("third_parameter", Chr(34) & "\" & Chr(34) & "," & Chr(34),
+                                      iPosition:=2, bIncludeArgumentName:=False)
+
+        clsFlattenFunction.SetPackageName("stringr")
+        clsFlattenFunction.SetRCommand("str_flatten")
+        clsFlattenFunction.AddParameter("string", clsRFunctionParameter:=clsPasteFunction, iPosition:=0)
+        clsFlattenFunction.SetAssignTo("survey_levels")
+
+
+        clsRelevelPasteFunction.SetRCommand("paste0")
+        clsRelevelPasteFunction.AddParameter("first_paramete", Chr(34) & "function(attr) {  var sortAs = $.pivotUtilities.sortAs;  return sortAs([" & Chr(34) & ", survey_levels," & Chr(34) & "]); }" & Chr(34),
+                                            bIncludeArgumentName:=False, iPosition:=0)
+        clsRelevelPasteFunction.SetAssignTo("relevel_variables")
+
+
+        clsConcatenateFunction.SetRCommand("c")
+
+        clsSelectFunction.SetPackageName("dplyr")
+        clsSelectFunction.SetRCommand("select")
+        clsSelectFunction.AddParameter("concatenate", clsRFunctionParameter:=clsConcatenateFunction, iPosition:=0, bIncludeArgumentName:=False)
 
         clsPipeOperator.SetOperation("%>%")
         clsPipeOperator.AddParameter("columns", clsRFunctionParameter:=clsSelectFunction, iPosition:=1)
@@ -127,21 +177,24 @@ Public Class dlgThreeVariablePivotTable
         clsRPivotTableFunction.SetPackageName("rpivotTable")
         clsRPivotTableFunction.SetRCommand("rpivotTable")
         clsRPivotTableFunction.AddParameter("data", clsRFunctionParameter:=ucrSelectorPivot.ucrAvailableDataFrames.clsCurrDataFrame, iPosition:=0)
+        clsRPivotTableFunction.SetAssignTo("last_table")
 
-        clsSelectFunction.SetPackageName("dplyr")
-        clsSelectFunction.SetRCommand("select")
-        clsSelectFunction.AddParameter("concatenate", clsRFunctionParameter:=clsConcatenateFunction, iPosition:=0, bIncludeArgumentName:=False)
+        clsRPivotTableFunction.SetAssignToOutputObject(strRObjectToAssignTo:="last_table",
+                                                   strRObjectTypeLabelToAssignTo:=RObjectTypeLabel.Table,
+                                                   strRObjectFormatToAssignTo:=RObjectFormat.Html,
+                                                   strRDataFrameNameToAddObjectTo:=ucrSelectorPivot.strCurrentDataFrame,
+                                                   strObjectName:="last_table")
 
-        clsConcatenateFunction.SetRCommand("c")
-
-        ucrBase.clsRsyntax.AddToBeforeCodes(clsRPivotTableFunction, iPosition:=1)
-        ucrBase.clsRsyntax.SetBaseRFunction(clsGetObjectFunction)
+        ucrBase.clsRsyntax.SetBaseRFunction(clsRPivotTableFunction)
     End Sub
 
     Private Sub SetRCodeForControls(bReset As Boolean)
         bRcodeSet = False
+        ucrSelectorPivot.AddAdditionalCodeParameterPair(clsLevelsDollarOperator, ucrSelectorPivot.GetParameter, iAdditionalPairNo:=1)
+
         ucrSelectorPivot.SetRCode(clsPipeOperator, bReset)
         ucrReceiverInitialColumnFactor.SetRCode(clsRPivotTableFunction, bReset)
+        ucrReceiverFactorLevels.SetRCode(clsLevelsDollarOperator, bReset)
         ucrChkNumericVariable.SetRCode(clsRPivotTableFunction, bReset)
         ucrReceiverInitialRowFactors.SetRCode(clsRPivotTableFunction, bReset)
         ucrSavePivot.SetRCode(clsRPivotTableFunction, bReset)
@@ -160,6 +213,7 @@ Public Class dlgThreeVariablePivotTable
 
     Private Sub ucrBase_ClickReset(sender As Object, e As EventArgs) Handles ucrBase.ClickReset
         SetDefaults()
+        AutofillMode()
         SetRCodeForControls(True)
         TestOkEnabled()
     End Sub
@@ -167,9 +221,7 @@ Public Class dlgThreeVariablePivotTable
     Private Sub ucrChkSelectedVariable_ControlValueChanged(ucrChangedControl As ucrCore) Handles ucrChkSelectedVariable.ControlValueChanged
         If ucrChkSelectedVariable.Checked Then
             ucrReceiverSelectedVariable.SetMeAsReceiver()
-            ucrBase.clsRsyntax.AddToBeforeCodes(clsPipeOperator, iPosition:=0)
         Else
-            ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsPipeOperator)
             If ucrChkNumericVariable.Checked Then
                 ucrReceiverAdditionalRowFactor.SetMeAsReceiver()
             Else
@@ -180,49 +232,112 @@ Public Class dlgThreeVariablePivotTable
     End Sub
 
     Private Sub ucrSelectorPivot_ControlValueChanged(ucrChangedControl As ucrCore) Handles ucrSelectorPivot.ControlValueChanged
-        clsGetObjectFunction.AddParameter("data_name", Chr(34) & ucrSelectorPivot.ucrAvailableDataFrames.cboAvailableDataFrames.Text & Chr(34), iPosition:=0)
         ChangeDataParameterValue()
+        AutofillMode()
+        clsRPivotTableFunction._strDataFrameNameToAddAssignToObject = ucrSelectorPivot.strCurrentDataFrame
     End Sub
 
     Private Sub ChangeDataParameterValue()
         If ucrChkSelectedVariable.Checked Then
-            clsRPivotTableFunction.AddParameter("data", "data_selected", iPosition:=0)
+            clsRPivotTableFunction.AddParameter("data", clsROperatorParameter:=clsPipeOperator, iPosition:=0)
         Else
             clsRPivotTableFunction.AddParameter("data", clsRFunctionParameter:=ucrSelectorPivot.ucrAvailableDataFrames.clsCurrDataFrame, iPosition:=0)
         End If
     End Sub
 
     Private Sub ReceiversChanged(ucrChangedControls As ucrCore) Handles ucrReceiverInitialColumnFactor.ControlValueChanged, ucrReceiverSelectedVariable.ControlValueChanged,
-        ucrReceiverInitialRowFactors.ControlValueChanged, ucrReceiverAdditionalRowFactor.ControlValueChanged
-        If Not bRcodeSet OrElse Not ucrChkSelectedVariable.Checked Then
+        ucrReceiverInitialRowFactors.ControlValueChanged, ucrReceiverAdditionalRowFactor.ControlValueChanged, ucrReceiverFactorLevels.ControlValueChanged
+        If Not bRcodeSet Then
             Exit Sub
         End If
 
-        Dim lstColumns As New List(Of String)
-        Dim iPosition As Integer = 0
-        Dim strColumnVariableName As String = ucrReceiverInitialColumnFactor.GetVariableNames(bWithQuotes:=False)
-        Dim strRowVariableName As String = ucrReceiverAdditionalRowFactor.GetVariableNames(bWithQuotes:=False)
+        If ucrChkSelectedVariable.Checked Then
+            Dim lstColumns As New List(Of String)
+            Dim iPosition As Integer = 0
+            Dim strColumnVariableName As String = ucrReceiverInitialColumnFactor.GetVariableNames(bWithQuotes:=False)
+            Dim strRowVariableName As String = ucrReceiverAdditionalRowFactor.GetVariableNames(bWithQuotes:=False)
+            Dim strFactorLevelsVariable As String = ucrReceiverFactorLevels.GetVariableNames(False)
+            clsConcatenateFunction.ClearParameters()
+            If Not ucrReceiverInitialRowFactors.IsEmpty Then
+                CheckForDuplication(lstColumns, ucrReceiverInitialRowFactors, iPosition)
+            End If
 
-        clsConcatenateFunction.ClearParameters()
-        If Not ucrReceiverInitialRowFactors.IsEmpty Then
-            CheckForDuplication(lstColumns, ucrReceiverInitialRowFactors, iPosition)
+            If Not ucrReceiverSelectedVariable.IsEmpty Then
+                CheckForDuplication(lstColumns, ucrReceiverSelectedVariable, iPosition)
+            End If
+
+            If Not ucrReceiverInitialColumnFactor.IsEmpty AndAlso Not lstColumns.Contains(strColumnVariableName) Then
+                lstColumns.Add(ucrReceiverInitialColumnFactor.GetVariableNames(bWithQuotes:=False))
+                clsConcatenateFunction.AddParameter("col" & iPosition, strColumnVariableName, iPosition:=iPosition, bIncludeArgumentName:=False)
+                iPosition += 1
+            End If
+
+            If Not ucrReceiverAdditionalRowFactor.IsEmpty AndAlso
+                Not lstColumns.Contains(strRowVariableName) AndAlso ucrChkNumericVariable.Checked Then
+                clsConcatenateFunction.AddParameter("col" & iPosition, strRowVariableName, iPosition:=iPosition, bIncludeArgumentName:=False)
+                iPosition += 1
+            End If
+            If Not ucrReceiverFactorLevels.IsEmpty AndAlso
+                Not lstColumns.Contains(strFactorLevelsVariable) Then
+                clsConcatenateFunction.AddParameter("factor_level", strFactorLevelsVariable,
+                                  bIncludeArgumentName:=False, iPosition:=iPosition)
+            End If
         End If
 
-        If Not ucrReceiverSelectedVariable.IsEmpty Then
-            CheckForDuplication(lstColumns, ucrReceiverSelectedVariable, iPosition)
+        If ucrChangedControls Is ucrReceiverFactorLevels Then
+            If ucrReceiverFactorLevels.IsEmpty Then
+                ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsFlattenFunction)
+                clsRPivotTableFunction.RemoveParameterByName("sorters")
+            Else
+                ucrBase.clsRsyntax.AddToBeforeCodes(clsFlattenFunction, 0)
+                clsRPivotTableFunction.AddParameter(strParameterName:="sorters", clsRFunctionParameter:=clsRelevelPasteFunction, iPosition:=3)
+            End If
         End If
+    End Sub
 
-        If Not ucrReceiverInitialColumnFactor.IsEmpty AndAlso Not lstColumns.Contains(strColumnVariableName) Then
-            lstColumns.Add(ucrReceiverInitialColumnFactor.GetVariableNames(bWithQuotes:=False))
-            clsConcatenateFunction.AddParameter("col" & iPosition, strColumnVariableName, iPosition:=iPosition, bIncludeArgumentName:=False)
-            iPosition = iPosition + 1
-        End If
+    Private Sub AutofillMode()
+        Select Case enumPivotMode
+            Case PivotMode.Describe
+                ucrReceiverInitialRowFactors.bAutoFill = False
 
-        If Not ucrReceiverAdditionalRowFactor.IsEmpty AndAlso
-            Not lstColumns.Contains(strRowVariableName) AndAlso ucrChkNumericVariable.Checked Then
-            clsConcatenateFunction.AddParameter("col" & iPosition, strRowVariableName, iPosition:=iPosition, bIncludeArgumentName:=False)
-            iPosition = iPosition + 1
-        End If
+                ucrReceiverInitialColumnFactor.bAutoFill = False
+
+                ucrReceiverFactorLevels.SetDataType("factor")
+                ucrReceiverFactorLevels.bAutoFill = False
+
+                ucrReceiverAdditionalRowFactor.SetIncludedDataTypes({"numeric", "Date", "logical"})
+                ucrReceiverAdditionalRowFactor.bAutoFill = False
+            Case PivotMode.Climatic
+                Dim strMonthCol As String
+                Dim strDataFrame As String
+                Dim strRainCol As String
+                Dim strYearCol As String
+                Dim strDayCol As String
+
+                strDataFrame = ucrSelectorPivot.ucrAvailableDataFrames.cboAvailableDataFrames.Text
+                strMonthCol = frmMain.clsRLink.GetClimaticColumnOfType(strDataFrame, "month_label")
+                strRainCol = frmMain.clsRLink.GetClimaticColumnOfType(strDataFrame, "rain_label")
+                strYearCol = frmMain.clsRLink.GetClimaticColumnOfType(strDataFrame, "year_label")
+                strDayCol = frmMain.clsRLink.GetClimaticColumnOfType(strDataFrame, "day_label")
+                If Not String.IsNullOrEmpty(strRainCol) Then
+                    ucrChkNumericVariable.Checked = True
+                    ucrReceiverAdditionalRowFactor.Add(strRainCol, strDataFrame)
+                Else
+                    ucrChkNumericVariable.Checked = False
+                End If
+
+                If Not String.IsNullOrEmpty(strMonthCol) Then
+                    ucrReceiverFactorLevels.Add(strMonthCol, strDataFrame)
+                    ucrReceiverInitialColumnFactor.Add(strMonthCol, strDataFrame)
+                End If
+                If ucrSelectorPivot.lstAvailableVariable.Items.Count > 0 AndAlso
+                   Not String.IsNullOrEmpty(strYearCol) AndAlso Not String.IsNullOrEmpty(strDayCol) Then
+                    Dim lstItems(1) As KeyValuePair(Of String, String)
+                    lstItems(0) = New KeyValuePair(Of String, String)(strDataFrame, strYearCol)
+                    lstItems(1) = New KeyValuePair(Of String, String)(strDataFrame, strDayCol)
+                    ucrReceiverInitialRowFactors.AddMultiple(lstItems)
+                End If
+        End Select
     End Sub
 
     Private Sub CheckForDuplication(lstNewColumns As List(Of String), ucrNewReceiver As ucrReceiverMultiple, ByRef iNewposition As Integer)
@@ -239,15 +354,6 @@ Public Class dlgThreeVariablePivotTable
     Private Sub Controls_ControlContentsChanged(ucrChangedControl As ucrCore) Handles ucrReceiverSelectedVariable.ControlContentsChanged,
             ucrReceiverInitialColumnFactor.ControlContentsChanged, ucrChkSelectedVariable.ControlContentsChanged, ucrSavePivot.ControlContentsChanged
         TestOkEnabled()
-    End Sub
-
-    Private Sub ucrSavePivot_ControlValueChanged(ucrChangedControl As ucrCore) Handles ucrSavePivot.ControlValueChanged
-        If ucrSavePivot.ucrChkSave.Checked Then
-            clsGetObjectFunction.AddParameter("object_name", Chr(34) & ucrSavePivot.ucrInputComboSave.GetText & Chr(34), iPosition:=1)
-        Else
-            clsGetObjectFunction.AddParameter("object_name", Chr(34) & "last_table" & Chr(34), iPosition:=1)
-        End If
-
     End Sub
 
     Private Sub ucrChkNumericVariable_ControlValueChanged(ucrChangedControl As ucrCore) Handles ucrChkNumericVariable.ControlValueChanged

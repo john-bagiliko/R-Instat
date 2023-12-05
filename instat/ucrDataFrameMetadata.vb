@@ -24,12 +24,25 @@ Public Class ucrDataFrameMetadata
     Private _grid As IDataframeMetaDataGrid
     Dim _strNameLabel As String = "data_name"
 
-    '  Public WithEvents grdCurrSheet As unvell.ReoGrid.Worksheet
-    Public strPreviousCellText As String
+    '  Public WithEvents grdCurrSheet As unvell.ReoGrid.Worksheets
     Private lstNonEditableColumns As New List(Of String)
     Private clsHideDataFrame As New RFunction
     Private clsViewDataFrame As New RFunction
     Private clsGetDataFrame As New RFunction
+
+    Public Sub New()
+        ' This call is required by the designer.
+        InitializeComponent()
+
+        ' Add any initialization after the InitializeComponent() call.
+        SetupInitialLayoutAndGrid()
+    End Sub
+    Private Sub ucrDataFrameMetadata_Load(sender As Object, e As EventArgs) Handles Me.Load
+        clsViewDataFrame.SetRCommand("View")
+        clsGetDataFrame.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$get_data_frame")
+        clsHideDataFrame.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$append_to_dataframe_metadata")
+    End Sub
+
 
     Public WriteOnly Property DataBook() As clsDataBook
         Set(ByVal value As clsDataBook)
@@ -38,14 +51,7 @@ Public Class ucrDataFrameMetadata
         End Set
     End Property
 
-    Private Sub frmMetaData_Load(sender As Object, e As EventArgs) Handles Me.Load
-        LoadForm()
-        clsViewDataFrame.SetRCommand("View")
-        clsGetDataFrame.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$get_data_frame")
-        clsHideDataFrame.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$append_to_dataframe_metadata")
-    End Sub
-
-    Private Sub LoadForm()
+    Private Sub SetupInitialLayoutAndGrid()
         lstNonEditableColumns.AddRange({"class", "Is_Hidden", "Row_Count", "Column_Count", "Is_Linkable", "Is_Calculated"})
 
         'Debug
@@ -83,9 +89,9 @@ Public Class ucrDataFrameMetadata
         If _clsDataBook Is Nothing Or _clsDataBook.DataFrames.Count = 0 Then
             Exit Sub
         End If
+        _grid.UpdateAllWorksheetStyles()
         _grid.AddColumns()
         _grid.AddRowData()
-        _grid.UpdateAllWorksheetStyles()
     End Sub
 
     Public Sub RefreshGridData()
@@ -124,8 +130,7 @@ Public Class ucrDataFrameMetadata
                     MsgBox(newValue.ToString() & " is an existing data frame name.", MsgBoxStyle.Information, "Invalid Data Frame Name")
                     Exit Sub
                 Else
-                    strScript = frmMain.clsRLink.strInstatDataObject & "$rename_dataframe(data_name =" & Chr(34) & strPreviousCellText & Chr(34) &
-                                    ", new_val = " & strNewValue & ")"
+                    strScript = frmMain.clsRLink.strInstatDataObject & "$rename_dataframe(data_name =" & Chr(34) & strPreviousValue & Chr(34) & ", new_val = " & strNewValue & ")"
                     strComment = "Renamed data frame"
                 End If
             Else

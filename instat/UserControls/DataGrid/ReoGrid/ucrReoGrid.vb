@@ -71,8 +71,41 @@ Public MustInherit Class ucrReoGrid
         Return New clsWorksheetAdapter(fillWorkSheet)
     End Function
 
+    ''' <summary>
+    ''' Reorder the worksheets
+    ''' </summary>
+    Private Sub ReOrderWorksheets(strCurrWorksheet As String) Implements IGrid.ReOrderWorksheets
+        'assuming the databook will always have all the data frames 
+        'and the grid may not have all the data frame worksheets equivalent
+        'and all data frames in the data book have changed their order positions 
+        'get data frames sheets in the grid based on the databook data frames position order
+        'and add it to the list.
+        Dim lstWorkSheetsFound As New List(Of Worksheet)
+        For Each clsDataframe In _clsDataBook.DataFrames
+            Dim fillWorkSheet As Worksheet = grdData.GetWorksheetByName(clsDataframe.strName)
+            If fillWorkSheet IsNot Nothing Then
+                lstWorkSheetsFound.Add(fillWorkSheet)
+            End If
+        Next
+
+        'in the second condition we check if all data frames in the data book
+        'have the same order positions with all data frame sheets in the grid
+        'if not this check will return False which means the data frames in the data book are reordered
+        If lstWorkSheetsFound.Count > 1 AndAlso Not _clsDataBook.DataFrames.Select(Function(x) x.strName).ToList().
+                                                       SequenceEqual(grdData.Worksheets.Select(Function(x) x.Name).ToList()) Then
+            'reorder the worksheets based on the filled list
+            For i As Integer = 0 To lstWorkSheetsFound.Count - 1
+                grdData.MoveWorksheet(lstWorkSheetsFound(i), i)
+            Next
+            grdData.CurrentWorksheet = grdData.GetWorksheetByName(strCurrWorksheet) 'set the selected sheet back active before reordering
+        End If
+    End Sub
+
     Public Sub CopyRange() Implements IGrid.CopyRange
-        grdData.CurrentWorksheet.Copy()
+        If Not IsNothing(grdData) _
+                AndAlso Not IsNothing(grdData.CurrentWorksheet) Then
+            grdData.CurrentWorksheet.Copy()
+        End If
     End Sub
 
     Public Function GetSelectedRows() As List(Of String) Implements IGrid.GetSelectedRows
@@ -106,8 +139,11 @@ Public MustInherit Class ucrReoGrid
         For i = grdData.Worksheets.Count - 1 To 0 Step -1
             Dim iGridWorkheetsPosition As Integer = i 'Needed to prevent warning
             If _clsDataBook.DataFrames.Where(Function(x) x.strName = grdData.Worksheets(iGridWorkheetsPosition).Name).Count = 0 Then
-                grdData.RemoveWorksheet(i)
-                bDeleted = True
+                ' Check if we are deleting the last worksheet
+                If grdData.Worksheets.Count > 1 Then
+                    grdData.RemoveWorksheet(i)
+                    bDeleted = True
+                End If
             End If
         Next
         ' Force the grid to refresh if a sheet has been deleted as there is sometimes a UI problem otherwise.
@@ -180,10 +216,28 @@ Public MustInherit Class ucrReoGrid
         e.IsCancelled = True
     End Sub
 
+    Private Function GetRowIndex(currWorkSheet As Worksheet, strRowName As String) As Integer
+        If currWorkSheet IsNot Nothing Then
+            For i As Integer = 0 To currWorkSheet.Rows - 1
+                Dim strCol As String = currWorkSheet.RowHeaders(i).Text
+                If strCol = strRowName Then
+                    Return i
+                End If
+            Next
+        End If
+        Return -1
+    End Function
+
     Private Function GetCellValue(iRow As Integer, strColumn As String) As String Implements IGrid.GetCellValue
         For i As Integer = 0 To grdData.CurrentWorksheet.ColumnCount - 1
-            If grdData.CurrentWorksheet.ColumnHeaders(i).Text = strColumn Then
-                Return grdData.CurrentWorksheet(iRow, i).ToString()
+            Dim strColumnHeader As String = grdData.CurrentWorksheet.ColumnHeaders(i).Text
+            If strColumnHeader.Contains("(") Then
+                strColumnHeader = strColumnHeader.Split("(")(0)
+            End If
+            Dim iRowIndex = GetRowIndex(grdData.CurrentWorksheet, iRow) + 1
+            If strColumnHeader.Trim = strColumn _
+                AndAlso iRowIndex > -1 Then
+                Return grdData.CurrentWorksheet(iRowIndex, i).ToString()
             End If
         Next
         Return ""
